@@ -2,62 +2,16 @@
 # Run: shiny run --reload app.py
 # Requires: pip install shiny biopython pandas matplotlib seaborn
 
-
 from __future__ import annotations
 
 from shiny import App, Inputs, Outputs, Session, reactive, render, ui
 from shiny.types import FileInfo
 from Bio import SeqIO
 from collections import defaultdict, Counter
-import math
-import pandas as pd
-import io
-import matplotlib.pyplot as plt
-import seaborn as sns
-import re
-from typing import Dict, List, Tuple
+import math, pandas as pd, io, matplotlib.pyplot as plt, seaborn as sns, re
+from typing import Dict, List, Tuple, Optional
 
-# ---------------- Built-in weights ----------------
-ECOLI_CAI = {
-    'TTT': 0.58, 'TTC': 1.00, 'TTA': 0.02, 'TTG': 0.07,
-    'CTT': 0.13, 'CTC': 0.20, 'CTA': 0.02, 'CTG': 1.00,
-    'ATT': 0.49, 'ATC': 1.00, 'ATA': 0.03, 'ATG': 1.00,
-    'GTT': 0.35, 'GTC': 0.47, 'GTA': 0.07, 'GTG': 1.00,
-    'TCT': 0.22, 'TCC': 0.39, 'TCA': 0.15, 'TCG': 0.06,
-    'AGT': 0.15, 'AGC': 1.00,
-    'CCT': 0.42, 'CCC': 0.29, 'CCA': 0.28, 'CCG': 1.00,
-    'ACT': 0.23, 'ACC': 1.00, 'ACA': 0.36, 'ACG': 0.47,
-    'GCT': 0.37, 'GCC': 1.00, 'GCA': 0.28, 'GCG': 0.76,
-    'TAT': 0.43, 'TAC': 1.00, 'CAT': 0.43, 'CAC': 1.00,
-    'CAA': 0.27, 'CAG': 1.00, 'AAT': 0.47, 'AAC': 1.00,
-    'AAA': 0.44, 'AAG': 1.00, 'GAT': 0.63, 'GAC': 1.00,
-    'GAA': 0.68, 'GAG': 1.00, 'TGT': 0.44, 'TGC': 1.00,
-    'TGG': 1.00,
-    'CGT': 0.36, 'CGC': 1.00, 'CGA': 0.07, 'CGG': 0.11,
-    'AGA': 0.02, 'AGG': 0.02,
-    'GGT': 0.41, 'GGC': 1.00, 'GGA': 0.25, 'GGG': 0.50
-}
-ECOLI_TAI = {
-    'TTT': 0.43, 'TTC': 1.00, 'TTA': 0.17, 'TTG': 0.32,
-    'CTT': 0.22, 'CTC': 0.38, 'CTA': 0.07, 'CTG': 1.00,
-    'ATT': 0.38, 'ATC': 0.69, 'ATA': 0.10, 'ATG': 1.00,
-    'GTT': 0.31, 'GTC': 0.44, 'GTA': 0.09, 'GTG': 1.00,
-    'TCT': 0.32, 'TCC': 0.51, 'TCA': 0.27, 'TCG': 0.23,
-    'AGT': 0.25, 'AGC': 0.55,
-    'CCT': 0.31, 'CCC': 0.29, 'CCA': 0.25, 'CCG': 1.00,
-    'ACT': 0.28, 'ACC': 1.00, 'ACA': 0.38, 'ACG': 0.47,
-    'GCT': 0.37, 'GCC': 1.00, 'GCA': 0.29, 'GCG': 0.69,
-    'TAT': 0.37, 'TAC': 1.00, 'CAT': 0.41, 'CAC': 1.00,
-    'CAA': 0.36, 'CAG': 1.00, 'AAT': 0.48, 'AAC': 1.00,
-    'AAA': 0.38, 'AAG': 1.00, 'GAT': 0.54, 'GAC': 1.00,
-    'GAA': 0.59, 'GAG': 1.00, 'TGT': 0.45, 'TGC': 1.00,
-    'TGG': 1.00,
-    'CGT': 0.27, 'CGC': 1.00, 'CGA': 0.09, 'CGG': 0.13,
-    'AGA': 0.05, 'AGG': 0.05,
-    'GGT': 0.39, 'GGC': 1.00, 'GGA': 0.21, 'GGG': 0.47
-}
-
-# Codon table for ENC
+# ---------------- Codon table / utilities ----------------
 CODON_TABLE: Dict[str, List[str]] = {
     'F': ['TTT', 'TTC'], 'L': ['TTA', 'TTG', 'CTT', 'CTC', 'CTA', 'CTG'],
     'I': ['ATT', 'ATC', 'ATA'], 'M': ['ATG'], 'V': ['GTT', 'GTC', 'GTA', 'GTG'],
@@ -68,284 +22,328 @@ CODON_TABLE: Dict[str, List[str]] = {
     'E': ['GAA', 'GAG'], 'C': ['TGT', 'TGC'], 'W': ['TGG'],
     'R': ['CGT', 'CGC', 'CGA', 'CGG', 'AGA', 'AGG'], 'G': ['GGT', 'GGC', 'GGA', 'GGG']
 }
-SENSE_CODONS: List[str] = sorted({c for codons in CODON_TABLE.values() for c in codons})
+SENSE_CODONS = sorted({c for v in CODON_TABLE.values() for c in v})
+AA_FOR = {c: aa for aa, codons in CODON_TABLE.items() for c in codons}
 
-# ---------------- Calculators ----------------
-def normalize_seq(seq: str) -> str:
-    s = seq.upper().replace(" ", "").replace("\n", "").replace("U", "T")
-    return re.sub(r"[^ACGT]", "", s)
+def normalize_seq(s: str) -> str:
+    s = s.upper().replace(" ", "").replace("\n", "").replace("U", "T")
+    s = re.sub(r"[^ACGT]", "", s)
+    n = len(s) - (len(s) % 3)
+    return s[:n]
 
+# ---------------- Built-in CAI/tAI weights (unchanged from earlier) ----------------
+ECOLI_CAI = {
+    'TTT': 0.58, 'TTC': 1.00, 'TTA': 0.02, 'TTG': 0.07, 'CTT': 0.13, 'CTC': 0.20,
+    'CTA': 0.02, 'CTG': 1.00, 'ATT': 0.49, 'ATC': 1.00, 'ATA': 0.03, 'ATG': 1.00,
+    'GTT': 0.35, 'GTC': 0.47, 'GTA': 0.07, 'GTG': 1.00, 'TCT': 0.22, 'TCC': 0.39,
+    'TCA': 0.15, 'TCG': 0.06, 'AGT': 0.15, 'AGC': 1.00, 'CCT': 0.42, 'CCC': 0.29,
+    'CCA': 0.28, 'CCG': 1.00, 'ACT': 0.23, 'ACC': 1.00, 'ACA': 0.36, 'ACG': 0.47,
+    'GCT': 0.37, 'GCC': 1.00, 'GCA': 0.28, 'GCG': 0.76, 'TAT': 0.43, 'TAC': 1.00,
+    'CAT': 0.43, 'CAC': 1.00, 'CAA': 0.27, 'CAG': 1.00, 'AAT': 0.47, 'AAC': 1.00,
+    'AAA': 0.44, 'AAG': 1.00, 'GAT': 0.63, 'GAC': 1.00, 'GAA': 0.68, 'GAG': 1.00,
+    'TGT': 0.44, 'TGC': 1.00, 'TGG': 1.00, 'CGT': 0.36, 'CGC': 1.00, 'CGA': 0.07,
+    'CGG': 0.11, 'AGA': 0.02, 'AGG': 0.02, 'GGT': 0.41, 'GGC': 1.00, 'GGA': 0.25,
+    'GGG': 0.50
+}
+ECOLI_TAI = {
+    'TTT': 0.43, 'TTC': 1.00, 'TTA': 0.17, 'TTG': 0.32, 'CTT': 0.22, 'CTC': 0.38,
+    'CTA': 0.07, 'CTG': 1.00, 'ATT': 0.38, 'ATC': 0.69, 'ATA': 0.10, 'ATG': 1.00,
+    'GTT': 0.31, 'GTC': 0.44, 'GTA': 0.09, 'GTG': 1.00, 'TCT': 0.32, 'TCC': 0.51,
+    'TCA': 0.27, 'TCG': 0.23, 'AGT': 0.25, 'AGC': 0.55, 'CCT': 0.31, 'CCC': 0.29,
+    'CCA': 0.25, 'CCG': 1.00, 'ACT': 0.28, 'ACC': 1.00, 'ACA': 0.38, 'ACG': 0.47,
+    'GCT': 0.37, 'GCC': 1.00, 'GCA': 0.29, 'GCG': 0.69, 'TAT': 0.37, 'TAC': 1.00,
+    'CAT': 0.41, 'CAC': 1.00, 'CAA': 0.36, 'CAG': 1.00, 'AAT': 0.48, 'AAC': 1.00,
+    'AAA': 0.38, 'AAG': 1.00, 'GAT': 0.54, 'GAC': 1.00, 'GAA': 0.59, 'GAG': 1.00,
+    'TGT': 0.45, 'TGC': 1.00, 'TGG': 1.00, 'CGT': 0.27, 'CGC': 1.00, 'CGA': 0.09,
+    'CGG': 0.13, 'AGA': 0.05, 'AGG': 0.05, 'GGT': 0.39, 'GGC': 1.00, 'GGA': 0.21,
+    'GGG': 0.47
+}
+
+# S. cerevisiae (embedded weights you asked for)
+SCER_CAI = {
+    'TTT':0.31,'TTC':1.00,'TTA':0.06,'TTG':0.10,'CTT':0.18,'CTC':0.28,'CTA':0.05,'CTG':1.00,
+    'ATT':0.45,'ATC':1.00,'ATA':0.10,'ATG':1.00,'GTT':0.36,'GTC':0.63,'GTA':0.11,'GTG':1.00,
+    'TCT':0.35,'TCC':0.73,'TCA':0.28,'TCG':0.09,'AGT':0.22,'AGC':1.00,'CCT':0.36,'CCC':0.32,
+    'CCA':0.31,'CCG':1.00,'ACT':0.44,'ACC':1.00,'ACA':0.52,'ACG':0.22,'GCT':0.42,'GCC':1.00,
+    'GCA':0.51,'GCG':0.19,'TAT':0.42,'TAC':1.00,'CAT':0.46,'CAC':1.00,'CAA':0.24,'CAG':1.00,
+    'AAT':0.52,'AAC':1.00,'AAA':0.53,'AAG':1.00,'GAT':0.60,'GAC':1.00,'GAA':0.67,'GAG':1.00,
+    'TGT':0.59,'TGC':1.00,'TGG':1.00,'CGT':0.23,'CGC':1.00,'CGA':0.08,'CGG':0.14,'AGA':0.07,
+    'AGG':0.08,'GGT':0.53,'GGC':1.00,'GGA':0.34,'GGG':0.58
+}
+SCER_TAI = {
+    'TTT':0.36,'TTC':1.00,'TTA':0.12,'TTG':0.23,'CTT':0.24,'CTC':0.43,'CTA':0.10,'CTG':1.00,
+    'ATT':0.41,'ATC':0.78,'ATA':0.14,'ATG':1.00,'GTT':0.35,'GTC':0.58,'GTA':0.13,'GTG':1.00,
+    'TCT':0.40,'TCC':0.69,'TCA':0.30,'TCG':0.16,'AGT':0.27,'AGC':1.00,'CCT':0.35,'CCC':0.31,
+    'CCA':0.29,'CCG':1.00,'ACT':0.38,'ACC':1.00,'ACA':0.47,'ACG':0.22,'GCT':0.39,'GCC':1.00,
+    'GCA':0.46,'GCG':0.23,'TAT':0.41,'TAC':1.00,'CAT':0.46,'CAC':1.00,'CAA':0.30,'CAG':1.00,
+    'AAT':0.49,'AAC':1.00,'AAA':0.44,'AAG':1.00,'GAT':0.56,'GAC':1.00,'GAA':0.61,'GAG':1.00,
+    'TGT':0.51,'TGC':1.00,'TGG':1.00,'CGT':0.25,'CGC':1.00,'CGA':0.12,'CGG':0.17,'AGA':0.10,
+    'AGG':0.12,'GGT':0.49,'GGC':1.00,'GGA':0.32,'GGG':0.56
+}
+
+# ---------------- Zhou Table S5 per-codon High/Low ratios (first number per codon) ----------------
+ZHOUS5_RATIO = {
+    # Ala
+    'GCT': 1.717, 'GCC': 0.639, 'GCA': 0.986, 'GCG': 0.900,
+    # Arg
+    'CGT': 2.934, 'CGC': 1.189, 'CGA': 0.276, 'CGG': 0.210, 'AGA': 0.144, 'AGG': 0.153,
+    # Asn
+    'AAT': 0.271, 'AAC': 3.693,
+    # Asp
+    'GAT': 0.455, 'GAC': 2.198,
+    # Cys
+    'TGT': 0.622, 'TGC': 1.608,
+    # Gln
+    'CAA': 0.507, 'CAG': 1.972,
+    # Glu
+    'GAA': 1.331, 'GAG': 0.751,
+    # Gly
+    'GGT': 1.840, 'GGC': 1.474, 'GGA': 0.234, 'GGG': 0.327,
+    # His
+    'CAT': 0.381, 'CAC': 2.622,
+    # Ile
+    'ATT': 0.539, 'ATC': 3.406, 'ATA': 0.130,
+    # Leu
+    'CTT': 0.542, 'CTC': 0.744, 'CTA': 0.285, 'CTG': 3.759, 'TTA': 0.301, 'TTG': 0.527,
+    # Lys
+    'AAA': 1.136, 'AAG': 0.881,
+    # Phe
+    'TTT': 0.285, 'TTC': 3.510,
+    # Pro
+    'CCT': 0.526, 'CCC': 0.278, 'CCA': 0.737, 'CCG': 2.883,
+    # Ser
+    'TCT': 2.360, 'TCC': 2.142, 'TCA': 0.418, 'TCG': 0.581, 'AGT': 0.343, 'AGC': 1.086,
+    # Thr
+    'ACT': 1.963, 'ACC': 1.886, 'ACA': 0.293, 'ACG': 0.413,
+    # Tyr
+    'TAT': 0.348, 'TAC': 2.876,
+    # Val
+    'GTT': 1.668, 'GTC': 0.579, 'GTA': 1.221, 'GTG': 0.707,
+    # Single-codon AAs treated neutral:
+    'ATG': 1.000,  # Met
+    'TGG': 1.000,  # Trp
+}
+
+def copt_ratio_table_for_species(species: str) -> Dict[str, float]:
+    # Same ratios for both species unless you want separate sets
+    return {c: ZHOUS5_RATIO.get(c, 1.0) for c in SENSE_CODONS}
+
+# ---------------- CAI / tAI / ENC calculators ----------------
 def calculate_index(seq: str, weights: Dict[str, float]) -> float:
     seq = normalize_seq(seq)
     log_sum, count = 0.0, 0
     for i in range(0, len(seq) - 2, 3):
-        codon = seq[i:i+3]
-        w = weights.get(codon, 0.0)
+        w = weights.get(seq[i:i+3], 0.0)
         if w > 0.0:
-            log_sum += math.log(w)
-            count += 1
+            log_sum += math.log(w); count += 1
     return math.exp(log_sum / count) if count else 0.0
 
-def calculate_cai(seq: str, cai_weights: Dict[str, float]) -> float:
-    return calculate_index(seq, cai_weights)
-
-def calculate_tai(seq: str, tai_weights: Dict[str, float]) -> float:
-    return calculate_index(seq, tai_weights)
+def calculate_cai(seq: str, cai_w: Dict[str, float]) -> float: return calculate_index(seq, cai_w)
+def calculate_tai(seq: str, tai_w: Dict[str, float]) -> float: return calculate_index(seq, tai_w)
 
 def calculate_enc(seq: str) -> float:
     seq = normalize_seq(seq)
     aa_codon_counts: Dict[str, Counter[str]] = defaultdict(Counter)
     for i in range(0, len(seq) - 2, 3):
         codon = seq[i:i+3]
-        for aa, codons in CODON_TABLE.items():
-            if codon in codons:
-                aa_codon_counts[aa][codon] += 1
-
+        aa = AA_FOR.get(codon)
+        if aa:
+            aa_codon_counts[aa][codon] += 1
     Fk_list: List[Tuple[int, float]] = []
     for codons in aa_codon_counts.values():
         k = len(codons)
-        if k <= 1:
-            continue
+        if k <= 1: continue
         n = sum(codons.values())
         fk = sum((c / n) ** 2 for c in codons.values())
         if n > 1:
             Fk = (n * fk - 1) / (n - 1)
-            if Fk > 0:
-                Fk_list.append((k, Fk))
+            if Fk > 0: Fk_list.append((k, Fk))
+    if not Fk_list: return 61.0
+    try: return float(2 + sum(k for k, _ in Fk_list) / sum(1 / Fk for _, Fk in Fk_list))
+    except ZeroDivisionError: return 61.0
 
-    if not Fk_list:
-        return 61.0
-    try:
-        return float(2 + sum(k for k, _ in Fk_list) / sum(1 / Fk for _, Fk in Fk_list))
-    except ZeroDivisionError:
-        return 61.0
+# ---------------- Zhou Copt (ratio/log2) ----------------
+# Gene-level Copt (ratio) := geometric mean of per-codon High/Low ratios across the gene.
+def zhou_copt_ratio_for_gene(seq: str, codon_ratio: Dict[str, float]) -> Tuple[float, float]:
+    seq = normalize_seq(seq)
+    logs = []
+    for i in range(0, len(seq) - 2, 3):
+        c = seq[i:i+3]
+        if c in AA_FOR:
+            r = max(codon_ratio.get(c, 1.0), 1e-12)
+            logs.append(math.log(r, 2))
+    if not logs:
+        return 1.0, 0.0
+    mean_log2 = sum(logs) / len(logs)
+    gm_ratio = float(2 ** mean_log2)
+    return gm_ratio, float(mean_log2)
 
-def compute_codon_metrics_from_fasta(fasta_path: str, cai_w: Dict[str, float], tai_w: Dict[str, float]) -> pd.DataFrame:
-    results = []
-    for record in SeqIO.parse(fasta_path, "fasta"):
-        seq = str(record.seq)
-        results.append({
-            "ID": record.id,
-            "CAI": round(calculate_cai(seq, cai_w), 4),
-            "tAI": round(calculate_tai(seq, tai_w), 4),
-            "ENC": round(calculate_enc(seq), 2),
-        })
-    return pd.DataFrame(results)
+# ---------------- NEW: Binary Copt (%) threshold ----------------
+# Mark codon as "optimal" if Zhou ratio >= 0.70, else non-optimal.
+BINARY_THRESHOLD = 1.1
 
+def copt_percent_for_gene(seq: str, codon_ratio: Dict[str, float], threshold: float = BINARY_THRESHOLD) -> float:
+    seq = normalize_seq(seq)
+    total, optimal = 0, 0
+    for i in range(0, len(seq) - 2, 3):
+        c = seq[i:i+3]
+        if c in AA_FOR:
+            total += 1
+            if codon_ratio.get(c, 1.0) >= threshold:
+                optimal += 1
+    return (optimal / total * 100.0) if total > 0 else 0.0
+
+# ---------------- Sequence helpers ----------------
 def parse_sequences_from_text(text: str) -> List[Tuple[str, str]]:
-    """Accepts FASTA text or newline-delimited raw sequences. Returns [(ID, seq)]."""
-    text = text.strip()
-    if not text:
-        return []
+    text = (text or "").strip()
+    if not text: return []
     if text.startswith(">"):
-        entries = []
-        sid, buf = None, []
+        entries, sid, buf = [], None, []
         for line in text.splitlines():
             if line.startswith(">"):
-                if sid is not None and buf:
-                    entries.append((sid, "".join(buf)))
-                sid = line[1:].strip() or f"seq{len(entries)+1}"
-                buf = []
+                if sid is not None and buf: entries.append((sid, "".join(buf)))
+                sid, buf = line[1:].strip() or f"seq{len(entries)+1}", []
             else:
                 buf.append(line.strip())
-        if sid is not None:
-            entries.append((sid, "".join(buf)))
+        if sid is not None: entries.append((sid, "".join(buf)))
         return [(sid, normalize_seq(seq)) for sid, seq in entries if normalize_seq(seq)]
     else:
         seqs = [normalize_seq(l) for l in text.splitlines() if l.strip()]
         return [(f"seq{i+1}", s) for i, s in enumerate(seqs) if s]
 
-def compute_codon_metrics_from_text(text: str, cai_w: Dict[str, float], tai_w: Dict[str, float]) -> pd.DataFrame:
-    seqs = parse_sequences_from_text(text)
-    results = []
-    for sid, seq in seqs:
-        results.append({
-            "ID": sid,
-            "CAI": round(calculate_cai(seq, cai_w), 4),
-            "tAI": round(calculate_tai(seq, tai_w), 4),
-            "ENC": round(calculate_enc(seq), 2),
-        })
-    return pd.DataFrame(results)
-
-def read_weights_csv(fileinfo: List[FileInfo] | None) -> Dict[str, float] | None:
-    if not fileinfo:
-        return None
-    path = fileinfo[0]["datapath"]
-    df = pd.read_csv(path)
-    cols = {c.lower(): c for c in df.columns}
-    if "codon" not in cols or "weight" not in cols:
-        raise ValueError("Weights CSV must have columns: codon, weight")
-    df = df.rename(columns={cols["codon"]: "codon", cols["weight"]: "weight"})
-    df["codon"] = df["codon"].str.upper().str.replace("U", "T")
-    sub = df[df["codon"].isin(SENSE_CODONS)][["codon", "weight"]].dropna()
-    return dict(zip(sub["codon"], sub["weight"]))
-
-def pick_weights(species: str, cai_up: Dict[str, float] | None, tai_up: Dict[str, float] | None) -> Tuple[Dict[str, float], Dict[str, float]]:
-    if species == "ecoli":
-        return ECOLI_CAI, ECOLI_TAI
-    if cai_up is None or tai_up is None:
-        eq = {c: 1.0 for c in SENSE_CODONS}
-        return eq, eq
-    return cai_up, tai_up
-
-def make_boxplot_figure(df: pd.DataFrame, combined: bool = False):
-    if df.empty or ("Error" in df.columns):
-        fig = plt.figure(figsize=(4, 2))
-        plt.text(0.5, 0.5, "Provide valid sequences to see results", ha="center", va="center")
-        plt.axis("off")
-        return fig
-    if combined:
-        df_m = df.melt(id_vars=["ID"], value_vars=["CAI", "tAI", "ENC"],
-                       var_name="Metric", value_name="Value")
-        plt.figure(figsize=(6, 4))
-        sns.boxplot(x="Metric", y="Value", data=df_m)
-        plt.ylabel("Value")
-        plt.title("Codon Usage Metrics")
-        plt.tight_layout()
-        return plt.gcf()
-    fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-    sns.boxplot(y=df["CAI"], ax=axes[0], width=0.3); axes[0].set_title("CAI"); axes[0].set_ylabel("CAI"); axes[0].set_xticks([])
-    sns.boxplot(y=df["tAI"], ax=axes[1], width=0.3); axes[1].set_title("tAI"); axes[1].set_ylabel("tAI"); axes[1].set_xticks([])
-    sns.boxplot(y=df["ENC"], ax=axes[2], width=0.3); axes[2].set_title("ENC"); axes[2].set_ylabel("ENC"); axes[2].set_xticks([])
-    plt.tight_layout()
-    return fig
-
 # ---------------- UI ----------------
-app_ui = ui.page_fillable(
-    ui.layout_sidebar(
-        ui.sidebar(
-            ui.input_radio_buttons(
-                "input_mode", "Input method",
-                choices={"upload": "Upload FASTA", "paste": "Paste sequences"},
-                selected="upload"
-            ),
-            ui.panel_conditional(
-                "input.input_mode == 'upload'",
-                ui.input_file("fasta", "Upload FASTA", accept=[".fa", ".fasta", ".fna"])
-            ),
-            ui.panel_conditional(
-                "input.input_mode == 'paste'",
-                ui.input_text_area(
-                    "seq_text", "Paste sequences",
-                    placeholder="FASTA format preferred (e.g., >id1\nATGGCC...)\nOr one DNA/RNA sequence per line.",
-                    rows=10
-                )
-            ),
-            ui.hr(),
-            ui.input_radio_buttons(
-                "species", "Weights",
-                choices={"ecoli": "E. coli K-12 (built-in)", "custom": "Custom (upload CSVs)"},
-                selected="ecoli"
-            ),
-            ui.panel_conditional(
-                "input.species == 'custom'",
-                ui.help_text("CSV must have columns: codon, weight; codons like TTT (DNA)."),
-                ui.input_file("cai_csv", "Upload CAI weights (CSV)", accept=[".csv"]),
-                ui.input_file("tai_csv", "Upload tAI weights (CSV)", accept=[".csv"]),
-                ui.help_text("If either file is missing, equal weights (1.0) will be used.")
-            ),
-            ui.input_switch("combined", "Combine plots into one", value=False),
-            ui.hr(),
-            ui.download_button("download_csv", "Download metrics (CSV)"),
-            ui.download_button("download_plot", "Download plot (PNG)"),
-            width=320
-        ),
-        ui.layout_columns(
-            ui.card(
-                ui.card_header("Codon Metrics Table"),
-                ui.output_data_frame("metrics_df")
-            ),
-            ui.card(
-                ui.card_header("Copy-paste table (TSV)"),
-                ui.output_ui("metrics_tsv_ui")
-            ),
-        ),
-        ui.card(
-            ui.card_header("CAI / tAI / ENC Boxplots"),
-            ui.output_plot("metrics_plot", height="420px")
-        ),
+help_modal = ui.modal(
+    ui.h3("Help & Notes"),
+    ui.p("This app computes CAI, tAI, ENC, and Copt metrics for coding sequences."),
+    ui.h4("Copt (Zhou) used here"),
+    ui.tags.ul(
+        ui.tags.li("Per-codon values are the High/Low usage ratios from Zhou et al., Table S5 (first number per codon)."),
+        ui.tags.li("Copt_ratio (Zhou) = geometric mean of per-codon ratios; Copt_log2 (Zhou) = average log2 ratio."),
+        ui.tags.li(f"Copt (%) = % of codons with ratio ≥ {BINARY_THRESHOLD:.2f} (binary optimal/non-optimal)."),
+        ui.tags.li("Single-codon AAs (ATG, TGG) are neutral (ratio = 1.0).")
     ),
-    title="Codon Metrics (CAI, tAI, ENC)"
+    easy_close=True,
+    footer=ui.input_action_button("help_close", "Close"),
+    size="l"
+)
+
+app_ui = ui.page_fillable(
+    ui.navset_bar(
+        ui.nav_panel(
+            "App",
+            ui.layout_sidebar(
+                ui.sidebar(
+                    ui.input_action_button("help_open", "Help / What’s Copt?"),
+                    ui.hr(),
+                    ui.h4("Input sequences to score"),
+                    ui.input_radio_buttons("input_mode", None,
+                        choices={"upload": "Upload FASTA", "paste": "Paste sequences"},
+                        selected="upload"),
+                    ui.panel_conditional("input.input_mode == 'upload'",
+                        ui.input_file("fasta", "Upload FASTA", accept=[".fa",".fasta",".fna"])
+                    ),
+                    ui.panel_conditional("input.input_mode == 'paste'",
+                        ui.input_text_area("seq_text", "Paste FASTA or one sequence per line", rows=8)
+                    ),
+                    ui.hr(),
+                    ui.h4("Species for CAI/tAI (Copt ratios are from S5 and applied to both)"),
+                    ui.input_radio_buttons("species", None,
+                        choices={"ecoli": "E. coli (built-in)", "scer": "S. cerevisiae (built-in)"},
+                        selected="ecoli"),
+                    ui.input_switch("combined", "Combine plots", value=False),
+                    ui.download_button("download_csv", "Download metrics (CSV)"),
+                    ui.download_button("download_plot", "Download plot (PNG)"),
+                    width=370
+                ),
+                ui.layout_columns(
+                    ui.card(ui.card_header("Codon Metrics Table"), ui.output_data_frame("metrics_df")),
+                    ui.card(ui.card_header("Copy-paste table (TSV)"), ui.output_ui("metrics_tsv_ui")),
+                ),
+                ui.card(ui.card_header("CAI / tAI / ENC / Copt"),
+                        ui.output_plot("metrics_plot", height="460px"))
+            ),
+        ),
+        ui.nav_spacer(),
+        ui.nav_control(ui.a("⭐  CAI • tAI • ENC • Copt", href="#")),
+        title="Codon Metrics (CAI, tAI, ENC, Copt — Zhou)"
+    )
 )
 
 # ---------------- Server ----------------
 def server(input: Inputs, output: Outputs, session: Session):
+    # Help modal controls
+    @reactive.effect
+    @reactive.event(input.help_open)
+    def _open_help(): ui.modal_show(help_modal)
+    @reactive.effect
+    @reactive.event(input.help_close)
+    def _close_help(): ui.modal_remove()
 
-    # Load custom weight CSVs (reactive)
+    # Active weights and S5 ratio table
     @reactive.calc
-    def custom_cai():
-        try:
-            return read_weights_csv(input.cai_csv())
-        except Exception as e:
-            return {"__error__": str(e)}
+    def active_weights() -> Tuple[Dict[str,float], Dict[str,float], Dict[str,float]]:
+        sp = input.species()
+        if sp == "scer": return SCER_CAI, SCER_TAI, copt_ratio_table_for_species("scer")
+        return ECOLI_CAI, ECOLI_TAI, copt_ratio_table_for_species("ecoli")
 
-    @reactive.calc
-    def custom_tai():
-        try:
-            return read_weights_csv(input.tai_csv())
-        except Exception as e:
-            return {"__error__": str(e)}
-
-    @reactive.calc
-    def active_weights() -> Tuple[Dict[str, float], Dict[str, float]]:
-        species = input.species()
-        cai_w = custom_cai()
-        tai_w = custom_tai()
-        if isinstance(cai_w, dict) and "__error__" in cai_w:
-            cai_w = None
-        if isinstance(tai_w, dict) and "__error__" in tai_w:
-            tai_w = None
-        return pick_weights(species, cai_w, tai_w)
-
-    # Central metrics DF (reactive)
     @reactive.calc
     def metrics_df_calc() -> pd.DataFrame:
-        cai_w, tai_w = active_weights()
-        mode = input.input_mode()
+        cai_w, tai_w, copt_ratio = active_weights()
         try:
-            if mode == "upload":
+            # Collect sequences to score
+            seqs: List[Tuple[str, str]] = []
+            if input.input_mode() == "upload":
                 files = input.fasta()
-                if not files:
-                    return pd.DataFrame(columns=["ID", "CAI", "tAI", "ENC"])
-                path = files[0]["datapath"]
-                df = compute_codon_metrics_from_fasta(path, cai_w, tai_w)
+                if files:
+                    for rec in SeqIO.parse(files[0]["datapath"], "fasta"):
+                        seqs.append((rec.id, str(rec.seq)))
             else:
-                text = input.seq_text() or ""
-                df = compute_codon_metrics_from_text(text, cai_w, tai_w)
-            if not df.empty:
-                df = df[["ID", "CAI", "tAI", "ENC"]]
-            return df
-        except Exception as e:
-            # Show the error in-table instead of spinning forever
-            return pd.DataFrame({"Error": [str(e)]})
+                seqs.extend(parse_sequences_from_text(input.seq_text() or ""))
 
-    # Interactive table (id matches function name)
+            if not seqs:
+                return pd.DataFrame(columns=[
+                    "ID","CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"
+                ])
+
+            rows = []
+            for sid, s in seqs:
+                ratio_gm, log2_mean = zhou_copt_ratio_for_gene(s, copt_ratio)
+                copt_percent = copt_percent_for_gene(s, copt_ratio, BINARY_THRESHOLD)
+                rows.append({
+                    "ID": sid,
+                    "CAI": round(calculate_cai(s, cai_w), 4),
+                    "tAI": round(calculate_tai(s, tai_w), 4),
+                    "ENC": round(calculate_enc(s), 2),
+                    "Copt_ratio (Zhou)": round(ratio_gm, 4),
+                    "Copt_log2 (Zhou)": round(log2_mean, 4),
+                    "Copt (%)": round(copt_percent, 2),
+                })
+            return pd.DataFrame(rows)[
+                ["ID","CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"]
+            ]
+        except Exception as e:
+            return pd.DataFrame({"Error":[str(e)]})
+
+    # Interactive table
     @render.data_frame
     def metrics_df():
-        df = metrics_df_calc()
-        return render.DataTable(df)
+        return render.DataTable(metrics_df_calc())
 
-    # Copy-paste TSV UI (readonly textarea + copy button)
+    # Copy-paste TSV
     @render.ui
     def metrics_tsv_ui():
         df = metrics_df_calc()
+        cols = ["ID","CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"]
         if df.empty:
-            tsv = "ID\tCAI\ttAI\tENC"
-        elif "Error" in df.columns:
-            tsv = df.to_csv(sep="\t", index=False, lineterminator="\n")
+            tsv = "\t".join(cols)
         else:
-            tsv = df.to_csv(sep="\t", index=False, lineterminator="\n")
+            tsv = df[cols].to_csv(sep="\t", index=False, lineterminator="\n")
         return ui.TagList(
             ui.input_action_button("copy_btn", "Copy to clipboard"),
             ui.tags.textarea(
-                tsv,
-                id="tsv_area",
-                readonly=True,
-                style=(
-                    "width:100%; height:240px; "
-                    "font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "
-                    "'Liberation Mono', 'Courier New', monospace;"
-                ),
+                tsv, id="tsv_area", readonly=True,
+                style=("width:100%; height:260px; font-family: ui-monospace, SFMono-Regular, "
+                       "Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;")
             ),
             ui.tags.script(
                 """
@@ -354,9 +352,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                   const ta  = document.getElementById("tsv_area");
                   if (!btn || !ta) return;
                   btn.onclick = async function(){
-                    ta.focus();
-                    ta.select();
-                    ta.setSelectionRange(0, ta.value.length);
+                    ta.focus(); ta.select(); ta.setSelectionRange(0, ta.value.length);
                     try { await navigator.clipboard.writeText(ta.value); }
                     catch (e) { document.execCommand("copy"); }
                   };
@@ -366,26 +362,39 @@ def server(input: Inputs, output: Outputs, session: Session):
         )
 
     # Plot
-    @render.plot(alt="Boxplots of CAI, tAI, and ENC")
+    def make_boxplot_figure(df: pd.DataFrame, combined: bool):
+        if df.empty or ("Error" in df.columns):
+            fig = plt.figure(figsize=(4, 2))
+            plt.text(0.5, 0.5, "Provide sequences", ha="center", va="center")
+            plt.axis("off"); return fig
+        metrics = ["CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"]
+        if combined:
+            dfm = df.melt(id_vars=["ID"], value_vars=metrics, var_name="Metric", value_name="Value")
+            plt.figure(figsize=(10, 4)); sns.boxplot(x="Metric", y="Value", data=dfm)
+            plt.ylabel("Value"); plt.title("Codon Usage Metrics"); plt.tight_layout()
+            return plt.gcf()
+        fig, axes = plt.subplots(1, len(metrics), figsize=(4*len(metrics), 4))
+        for ax, col in zip(axes, metrics):
+            sns.boxplot(y=df[col], ax=ax, width=0.3)
+            ax.set_title(col); ax.set_ylabel(col); ax.set_xticks([])
+        plt.tight_layout(); return fig
+
+    @render.plot(alt="Boxplots of CAI, tAI, ENC, and Copt (Zhou)")
     def metrics_plot():
-        df = metrics_df_calc()
-        return make_boxplot_figure(df, combined=bool(input.combined()))
+        return make_boxplot_figure(metrics_df_calc(), combined=bool(input.combined()))
 
     # Downloads
     @render.download(filename="codon_metrics.csv")
     def download_csv():
         df = metrics_df_calc()
         with io.StringIO() as s:
-            df.to_csv(s, index=False)
-            yield s.getvalue()
+            df.to_csv(s, index=False); yield s.getvalue()
 
     @render.download(filename="codon_metrics_boxplot.png")
     def download_plot():
-        df = metrics_df_calc()
-        fig = make_boxplot_figure(df, combined=bool(input.combined()))
+        fig = make_boxplot_figure(metrics_df_calc(), combined=bool(input.combined()))
         with io.BytesIO() as buf:
             fig.savefig(buf, format="png", dpi=300, bbox_inches="tight")
-            plt.close(fig)
-            yield buf.getvalue()
+            plt.close(fig); yield buf.getvalue()
 
 app = App(app_ui, server)
