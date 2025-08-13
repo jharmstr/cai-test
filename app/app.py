@@ -82,7 +82,7 @@ SCER_TAI = {
 }
 
 # ---------------- Zhou Table S5 per-codon High/Low ratios (first number per codon) ----------------
-ZHOUS5_RATIO = {
+ECO_ZHOUS5_RATIO = {
     # Ala
     'GCT': 1.717, 'GCC': 0.639, 'GCA': 0.986, 'GCG': 0.900,
     # Arg
@@ -124,9 +124,53 @@ ZHOUS5_RATIO = {
     'TGG': 1.000,  # Trp
 }
 
+SCER_ZHOUS5_RATIO = {
+    # Ala
+    'GCT': 3.919, 'GCC': 1.318, 'GCA': 0.150, 'GCG': 0.122,
+    # Arg
+    'CGT': 1.554, 'CGC': 0.157, 'CGA': 0.042, 'CGG': 0.040, 'AGA': 4.273, 'AGG': 0.122,
+    # Asn
+    'AAT': 0.193, 'AAC': 5.188,
+    # Asp
+    'GAT': 0.485, 'GAC': 2.061,
+    # Cys
+    'TGT': 3.671, 'TGC': 0.272,
+    # Gln
+    'CAA': 6.547, 'CAG': 0.153,
+    # Glu
+    'GAA': 4.168, 'GAG': 0.240,
+    # Gly
+    'GGT': 10.496, 'GGC': 0.304, 'GGA': 0.120, 'GGG': 0.111,
+    # His
+    'CAT': 0.281, 'CAC': 3.561,
+    # Ile
+    'ATT': 1.261, 'ATC': 2.669, 'ATA': 0.108,
+    # Leu
+    'CTT': 0.542, 'CTC': 0.744, 'CTA': 0.285, 'CTG': 3.759, 'TTA': 0.301, 'TTG': 0.527,
+    # Lys
+    'AAA': .208, 'AAG': 4.811,
+    # Phe
+    'TTT': 0.251, 'TTC': 3.985,
+    # Pro
+    'CCT': 0.423, 'CCC': 0.144, 'CCA': 6.153, 'CCG': 0.126,
+    # Ser
+    'TCT': 2.819, 'TCC': 2.565, 'TCA': 0.331, 'TCG': 0.191, 'AGT': 0.364, 'AGC': 0.413,
+    # Thr
+    'ACT': 2.056, 'ACC': 2.640, 'ACA': 1.018, 'ACG': 0.126,
+    # Tyr
+    'TAT': 0.230, 'TAC': 4.340,
+    # Val
+    'GTT': 1.950, 'GTC': 2.696, 'GTA': 0.135, 'GTG': 0.221,
+    # Single-codon AAs treated neutral:
+    'ATG': 1.000,  # Met
+    'TGG': 1.000,  # Trp
+}
+
+
 def copt_ratio_table_for_species(species: str) -> Dict[str, float]:
-    # Same ratios for both species unless you want separate sets
-    return {c: ZHOUS5_RATIO.get(c, 1.0) for c in SENSE_CODONS}
+    if species == "scer":
+        return {c: SCER_ZHOUS5_RATIO.get(c, 1.0) for c in SENSE_CODONS}
+    return {c: ECO_ZHOUS5_RATIO.get(c, 1.0) for c in SENSE_CODONS}
 
 # ---------------- CAI / tAI / ENC calculators ----------------
 def calculate_index(seq: str, weights: Dict[str, float]) -> float:
@@ -179,8 +223,8 @@ def zhou_copt_ratio_for_gene(seq: str, codon_ratio: Dict[str, float]) -> Tuple[f
     return gm_ratio, float(mean_log2)
 
 # ---------------- NEW: Binary Copt (%) threshold ----------------
-# Mark codon as "optimal" if Zhou ratio >= 0.70, else non-optimal.
-BINARY_THRESHOLD = 1.1
+# Mark codon as "optimal" if Zhou ratio >=1, else non-optimal.
+BINARY_THRESHOLD = 1
 
 def copt_percent_for_gene(seq: str, codon_ratio: Dict[str, float], threshold: float = BINARY_THRESHOLD) -> float:
     seq = normalize_seq(seq)
