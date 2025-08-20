@@ -212,7 +212,7 @@ def parse_sequences_from_text(text: str) -> List[Tuple[str, str]]:
 # ---------------- UI ----------------
 help_modal = ui.modal(
     ui.h3("Help & Notes"),
-    ui.p("This app computes CAI, tAI, ENC, and Copt metrics for coding sequences."),
+    ui.p("This app computes CAI, tAI, ENC, and Copt metrics for coding sequences. See readme at https://github.com/jharmstr/codon_metrics_app for more details"),
     ui.h4("CAI"),
     ui.tags.ul(
         ui.tags.li("Codon Adaptation Index from Sharp et al."),
@@ -269,7 +269,7 @@ app_ui = ui.page_fillable(
                         )
                     ),
                     ui.hr(),
-                    ui.h4("Species for CAI/tAI (FASTA/Paste modes)"),
+                    ui.h4("Species(for expression optimization)"),
                     ui.input_radio_buttons("species", None,
                         choices={"ecoli": "E. coli (built-in)", "scer": "S. cerevisiae (built-in)"},
                         selected="ecoli"),
@@ -290,7 +290,7 @@ app_ui = ui.page_fillable(
             ),
         ),
         ui.nav_spacer(),
-        ui.nav_control(ui.a("⭐  CAI • tAI • ENC • Copt", href="#")),
+        ui.nav_control(ui.a("CAI • tAI • ENC • Copt", href="#")),
         title="Codon Metrics (CAI, tAI, ENC, Copt)"
     )
 )
