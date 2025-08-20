@@ -96,6 +96,9 @@ MIT License - https://mit-license.org/
 
 ## References:
 Sharp et al., The codon Adaptation Index--a measure of directional synonymous codon usage bias, and its potential applications, Nucleic Acids Research (1987).
+
 Wright, The ‘effective number of codons’ used in a gene, Gene (1990).
+
 dos Reis et al., Solving the riddle of codon usage preferences: a test for translational selection, Nucleic Acids Research (2004).
+
 Zhou et al., Measuring codon usage bias in microbial genomes, Nucleic Acids Research (2016).
