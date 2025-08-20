@@ -213,16 +213,30 @@ def parse_sequences_from_text(text: str) -> List[Tuple[str, str]]:
 help_modal = ui.modal(
     ui.h3("Help & Notes"),
     ui.p("This app computes CAI, tAI, ENC, and Copt metrics for coding sequences."),
-    ui.h4("Copt used here"),
+    ui.h4("CAI"),
+    ui.tags.ul(
+        ui.tags.li("Codon Adaptation Index from Sharp et al."),
+        ui.tags.li("Weights from public data"),
+    ),
+    ui.h4("tAI"),
+    ui.tags.ul(
+        ui.tags.li("tRNA Adaptation Index from dos Reis et al."),
+        ui.tags.li("Weights from public data"),
+    ),
+    ui.h4("ENC"),
+    ui.tags.ul(
+        ui.tags.li("Effective Number of Codons from Wright"),
+    ),
+    ui.h4("Copt"),
     ui.tags.ul(
         ui.tags.li("Per-codon values are High/Low usage ratios from Zhou et al."),
         ui.tags.li("Copt_ratio = geometric mean of per-codon ratios; Copt_log2 = average log2 ratio."),
         ui.tags.li(f"Copt (%) = % of codons with ratio ≥ {BINARY_THRESHOLD:.2f} (binary optimal/non-optimal)."),
-        ui.tags.li("Single-codon AAs (ATG, TGG) are neutral (ratio = 1.0).")
+        ui.tags.li("Single-codon AAs (ATG, TGG) are neutral (ratio = 1.0)."),
     ),
     easy_close=True,
     footer=ui.input_action_button("help_close", "Close"),
-    size="l"
+    size="l",
 )
 
 app_ui = ui.page_fillable(
@@ -231,7 +245,7 @@ app_ui = ui.page_fillable(
             "App",
             ui.layout_sidebar(
                 ui.sidebar(
-                    ui.input_action_button("help_open", "Help / What’s Copt?"),
+                    ui.input_action_button("help_open", "Help"),
                     ui.hr(),
                     ui.h4("Input mode"),
                     ui.input_radio_buttons(

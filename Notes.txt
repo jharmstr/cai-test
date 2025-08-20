@@ -1,0 +1,1 @@
+TE Data pulled from https://pmc.ncbi.nlm.nih.gov/articles/PMC4006352/ (Li) and https://pmc.ncbi.nlm.nih.gov/articles/PMC5777253/ (Morgan).  Morgan data derived from 30C values, f/m, mean of 3 runs, from CPKM table.

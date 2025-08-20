@@ -3,6 +3,10 @@
 This repository contains a Python [Shiny](https://shiny.posit.co/py/) web application for computing codon usage metrics from coding sequence (CDS) data.  
 The app allows you to score sequences for **CAI (Codon Adaptation Index)**, **tAI (tRNA Adaptation Index)**, **ENC (Effective Number of Codons)**, and **Copt (Codon Optimal)** metrics, visualize the results, and export them as tables or plots.
 
+Authored by Jake Armstrong
+
+https://jharmstr.github.io/codon_metrics_app/
+
 ---
 
 ## Features
