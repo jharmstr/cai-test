@@ -55,7 +55,7 @@ ECOLI_TAI = {
     'GGG': 0.47
 }
 
-# S. cerevisiae (embedded weights you asked for)
+# S. cerevisiae (default weights)
 SCER_CAI = {
     'TTT':0.31,'TTC':1.00,'TTA':0.06,'TTG':0.10,'CTT':0.18,'CTC':0.28,'CTA':0.05,'CTG':1.00,
     'ATT':0.45,'ATC':1.00,'ATA':0.10,'ATG':1.00,'GTT':0.36,'GTC':0.63,'GTA':0.11,'GTG':1.00,
@@ -77,8 +77,9 @@ SCER_TAI = {
     'AGG':0.12,'GGT':0.49,'GGC':1.00,'GGA':0.32,'GGG':0.56
 }
 
-# ---------------- Zhou Table S5 per-codon High/Low ratios (first number per codon) ----------------
-ECO_ZHOUS5_RATIO = {
+#COPT ratio values
+
+ECO_COPT_RATIO = {
     'GCT': 1.717, 'GCC': 0.639, 'GCA': 0.986, 'GCG': 0.900,
     'CGT': 2.934, 'CGC': 1.189, 'CGA': 0.276, 'CGG': 0.210, 'AGA': 0.144, 'AGG': 0.153,
     'AAT': 0.271, 'AAC': 3.693,
@@ -100,7 +101,7 @@ ECO_ZHOUS5_RATIO = {
     'ATG': 1.000,  # Met
     'TGG': 1.000,  # Trp
 }
-SCER_ZHOUS5_RATIO = {
+SCER_COPT_RATIO = {
     'GCT': 3.919, 'GCC': 1.318, 'GCA': 0.150, 'GCG': 0.122,
     'CGT': 1.554, 'CGC': 0.157, 'CGA': 0.042, 'CGG': 0.040, 'AGA': 4.273, 'AGG': 0.122,
     'AAT': 0.193, 'AAC': 5.188,
@@ -125,8 +126,8 @@ SCER_ZHOUS5_RATIO = {
 
 def copt_ratio_table_for_species(species_key: str) -> Dict[str, float]:
     if species_key == "scer":
-        return {c: SCER_ZHOUS5_RATIO.get(c, 1.0) for c in SENSE_CODONS}
-    return {c: ECO_ZHOUS5_RATIO.get(c, 1.0) for c in SENSE_CODONS}
+        return {c: SCER_COPT_RATIO.get(c, 1.0) for c in SENSE_CODONS}
+    return {c: ECO_COPT_RATIO.get(c, 1.0) for c in SENSE_CODONS}
 
 # ---------------- CAI / tAI / ENC calculators ----------------
 def calculate_index(seq: str, weights: Dict[str, float]) -> float:
@@ -162,8 +163,8 @@ def calculate_enc(seq: str) -> float:
     try: return float(2 + sum(k for k, _ in Fk_list) / sum(1 / Fk for _, Fk in Fk_list))
     except ZeroDivisionError: return 61.0
 
-# ---------------- Zhou Copt (ratio/log2) + Binary % ----------------
-def zhou_copt_ratio_for_gene(seq: str, codon_ratio: Dict[str, float]) -> Tuple[float, float]:
+# ---------------- Copt (ratio/log2) + Binary % ----------------
+def copt_ratio_for_gene(seq: str, codon_ratio: Dict[str, float]) -> Tuple[float, float]:
     seq = normalize_seq(seq)
     logs = []
     for i in range(0, len(seq) - 2, 3):
@@ -212,10 +213,10 @@ def parse_sequences_from_text(text: str) -> List[Tuple[str, str]]:
 help_modal = ui.modal(
     ui.h3("Help & Notes"),
     ui.p("This app computes CAI, tAI, ENC, and Copt metrics for coding sequences."),
-    ui.h4("Copt (Zhou) used here"),
+    ui.h4("Copt used here"),
     ui.tags.ul(
-        ui.tags.li("Per-codon values are High/Low usage ratios from Zhou et al., Table S5 (first number per codon)."),
-        ui.tags.li("Copt_ratio (Zhou) = geometric mean of per-codon ratios; Copt_log2 (Zhou) = average log2 ratio."),
+        ui.tags.li("Per-codon values are High/Low usage ratios from Zhou et al."),
+        ui.tags.li("Copt_ratio = geometric mean of per-codon ratios; Copt_log2 = average log2 ratio."),
         ui.tags.li(f"Copt (%) = % of codons with ratio ≥ {BINARY_THRESHOLD:.2f} (binary optimal/non-optimal)."),
         ui.tags.li("Single-codon AAs (ATG, TGG) are neutral (ratio = 1.0).")
     ),
@@ -276,7 +277,7 @@ app_ui = ui.page_fillable(
         ),
         ui.nav_spacer(),
         ui.nav_control(ui.a("⭐  CAI • tAI • ENC • Copt", href="#")),
-        title="Codon Metrics (CAI, tAI, ENC, Copt — Zhou)"
+        title="Codon Metrics (CAI, tAI, ENC, Copt)"
     )
 )
 
@@ -288,14 +289,14 @@ def active_sets_for_species(species_key: str) -> Tuple[Dict[str,float], Dict[str
 
 def compute_all_metrics(seq: str, species_key: str) -> Dict[str, float]:
     cai_w, tai_w, copt_ratio = active_sets_for_species(species_key)
-    ratio_gm, log2_mean = zhou_copt_ratio_for_gene(seq, copt_ratio)
+    ratio_gm, log2_mean = copt_ratio_for_gene(seq, copt_ratio)
     copt_percent = copt_percent_for_gene(seq, copt_ratio, BINARY_THRESHOLD)
     return {
         "CAI": round(calculate_cai(seq, cai_w), 4),
         "tAI": round(calculate_tai(seq, tai_w), 4),
         "ENC": round(calculate_enc(seq), 2),
-        "Copt_ratio (Zhou)": round(ratio_gm, 4),
-        "Copt_log2 (Zhou)": round(log2_mean, 4),
+        "Copt_ratio": round(ratio_gm, 4),
+        "Copt_log2": round(log2_mean, 4),
         "Copt (%)": round(copt_percent, 2),
     }
 
@@ -325,7 +326,7 @@ def server(input: Inputs, output: Outputs, session: Session):
 
             if not seqs:
                 return pd.DataFrame(columns=[
-                    "ID","CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"
+                    "ID","CAI","tAI","ENC","Copt_ratio","Copt_log2","Copt (%)"
                 ])
 
             rows = []
@@ -333,7 +334,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 m = compute_all_metrics(s, sp)
                 rows.append({"ID": sid, **m})
             return pd.DataFrame(rows)[
-                ["ID","CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"]
+                ["ID","CAI","tAI","ENC","Copt_ratio","Copt_log2","Copt (%)"]
             ]
         except Exception as e:
             return pd.DataFrame({"Error":[str(e)]})
@@ -374,7 +375,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         df = table_df_raw()
         if df is None or df.empty:
             return pd.DataFrame(columns=[
-                "ID","CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"
+                "ID","CAI","tAI","ENC","Copt_ratio","Copt_log2","Copt (%)"
             ])
         if "Error" in df.columns:
             return df
@@ -398,8 +399,8 @@ def server(input: Inputs, output: Outputs, session: Session):
             seq = normalize_seq(str(r[seq_col]))
             if not seq:
                 rows.append({"ID": sid, "CAI": float("nan"), "tAI": float("nan"),
-                             "ENC": float("nan"), "Copt_ratio (Zhou)": float("nan"),
-                             "Copt_log2 (Zhou)": float("nan"), "Copt (%)": float("nan")})
+                             "ENC": float("nan"), "Copt_ratio": float("nan"),
+                             "Copt_log2": float("nan"), "Copt (%)": float("nan")})
                 continue
 
             # Determine species for this row
@@ -416,7 +417,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             m = compute_all_metrics(seq, sp)
             rows.append({"ID": sid, **m})
         return pd.DataFrame(rows)[
-            ["ID","CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"]
+            ["ID","CAI","tAI","ENC","Copt_ratio","Copt_log2","Copt (%)"]
         ]
 
     # ===== Unified outputs (show metrics table depending on mode) =====
@@ -435,7 +436,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render.ui
     def metrics_tsv_ui():
         df = metrics_df_current()
-        cols = ["ID","CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"]
+        cols = ["ID","CAI","tAI","ENC","Copt_ratio","Copt_log2","Copt (%)"]
         if df.empty:
             tsv = "\t".join(cols)
         else:
@@ -473,7 +474,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             fig = plt.figure(figsize=(4, 2))
             plt.text(0.5, 0.5, "Provide sequences", ha="center", va="center")
             plt.axis("off"); return fig
-        metrics = ["CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"]
+        metrics = ["CAI","tAI","ENC","Copt_ratio","Copt_log2","Copt (%)"]
         if combined:
             dfm = df.melt(id_vars=["ID"], value_vars=metrics, var_name="Metric", value_name="Value")
             plt.figure(figsize=(10, 4)); sns.boxplot(x="Metric", y="Value", data=dfm)
@@ -485,7 +486,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             ax.set_title(col); ax.set_ylabel(col); ax.set_xticks([])
         plt.tight_layout(); return fig
 
-    @render.plot(alt="Boxplots of CAI, tAI, ENC, and Copt (Zhou)")
+    @render.plot(alt="Boxplots of CAI, tAI, ENC, and Copt")
     def metrics_plot():
         return make_boxplot_figure(metrics_df_current(), combined=bool(input.combined()))
 
