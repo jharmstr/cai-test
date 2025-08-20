@@ -1,7 +1,7 @@
 # Codon Metrics Shiny App
 
 This repository contains a Python [Shiny](https://shiny.posit.co/py/) web application for computing codon usage metrics from coding sequence (CDS) data.  
-The app allows you to score sequences for **CAI**, **tAI**, **ENC**, and **Copt** metrics, visualize the results, and export them as tables or plots.
+The app allows you to score sequences for **CAI (Codon Adaptation Index)**, **tAI (tRNA Adaptation Index)**, **ENC (Effective Number of Codons)**, and **Copt (Codon Optimal)** metrics, visualize the results, and export them as tables or plots.
 
 ---
 
@@ -41,82 +41,60 @@ The app allows you to score sequences for **CAI**, **tAI**, **ENC**, and **Copt*
 
    ```bash
    pip install shiny biopython pandas matplotlib seaborn scikit-learn
-Running the App
+   
+## Running the App
+
 From the repository directory, run:
-
-bash
-Copy
-Edit
 shiny run --reload app.py
-This will start a local server. By default, the app is accessible at:
+This will start a local server. By default, the app is accessible at:  http://127.0.0.1:8000
 
-cpp
-Copy
-Edit
-http://127.0.0.1:8000
-Usage
+## Usage
 Choose input mode (sidebar):
-
-Upload FASTA: supply .fa, .fasta, or .fna file.
-
-Paste sequences: copy/paste directly into text box.
-
-Upload table (CSV): load a CSV containing CDS sequences.
+  1. Upload FASTA: supply .fa, .fasta, or .fna file.
+  2. Paste sequences: copy/paste directly into text box.
+  3. Upload table (CSV): load a CSV containing CDS sequences.
 
 If using CSV table mode:
-
-Select the ID, Sequence, and optional Species columns.
-
-Or set a fixed species for all rows.
-
-Species choice:
-
-For FASTA/paste modes, select E. coli or S. cerevisiae for CAI/tAI weights.
-
-Copt ratios are built in for both.
+  1. Select the ID, Sequence, and optional Species columns.
+  2. Or set a fixed species for all rows.
 
 Outputs:
-
-Codon Metrics Table: view results interactively.
-
-Copy-paste table (TSV): quickly grab results for spreadsheets or R/Python.
-
-Boxplots: visualize distributions of CAI, tAI, ENC, and Copt.
+  1. Codon Metrics Table: view results interactively.
+  2. Copy-paste table (TSV): quickly grab results for spreadsheets or R/Python.
+  3. Boxplots: visualize distributions of CAI, tAI, ENC, and Copt.
 
 Downloads:
+  1. Metrics table as CSV
+  2. Boxplots as PNG
+  3. Augmented CSV (Table mode only: original table + computed metrics)
 
-Metrics table as CSV
+## Example
 
-Boxplots as PNG
-
-Augmented CSV (Table mode only: original table + computed metrics)
-
-Example
 Input CSV:
+| tx_id  | species | CDS                     |
+| ------- | ------- | ----------------------- |
+| gfp     | ecoli   | ATGAGTAAAGGAGAAGAACTTT… |
+| mcherry | scer    | ATGGTGAGCAAGGGCGAGGAG…  |
 
-tx_id	species	CDS
-gfp	ecoli	ATGAGTAAAGGAGAAGAACTTT…
-mcherry	scer	ATGGTGAGCAAGGGCGAGGAG…
 
 Output CSV (augmented):
 
-tx_id	species	CDS	CAI	tAI	ENC	Copt_ratio (Zhou)	Copt_log2 (Zhou)	Copt (%)
-gfp	ecoli	…	0.73	0.68	42.1	1.23	0.30	64.5
-mcherry	scer	…	0.81	0.74	39.7	0.95	-0.07	48.9
+| tx_id  | species | CDS | CAI  | tAI  | ENC  | Copt\_ratio (Zhou) | Copt\_log2 (Zhou) | Copt (%) |
+| ------- | ------- | --- | ---- | ---- | ---- | ------------------ | ----------------- | -------- |
+| gfp     | ecoli   | …   | 0.73 | 0.68 | 42.1 | 1.23               | 0.30              | 64.5     |
+| mcherry | scer    | …   | 0.81 | 0.74 | 39.7 | 0.95               | -0.07             | 48.9     |
 
-Notes
+
+## Notes
 Input sequences are automatically normalized (uppercase, U→T, trimmed to full codons).
-
 Single-codon amino acids (Met, Trp) are treated as neutral (ratio = 1.0) in Copt calculations.
-
 Exponential/log transforms require strictly positive values (e.g., when comparing metrics downstream).
-
 Built-in weights currently cover E. coli and S. cerevisiae only, but additional species can be added by extending the weight dictionaries.
 
-License
-MIT License – feel free to adapt and extend.
+## License
+MIT License - https://mit-license.org/
 
-Reference
+## References:
 Sharp et al., The codon Adaptation Index--a measure of directional synonymous codon usage bias, and its potential applications, Nucleic Acids Research (1987).
 Wright, The ‘effective number of codons’ used in a gene, Gene (1990).
 dos Reis et al., Solving the riddle of codon usage preferences: a test for translational selection, Nucleic Acids Research (2004).
