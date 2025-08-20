@@ -1,7 +1,3 @@
-# app.py
-# Run: shiny run --reload app.py
-# Requires: pip install shiny biopython pandas matplotlib seaborn
-
 from __future__ import annotations
 
 from shiny import App, Inputs, Outputs, Session, reactive, render, ui
@@ -9,7 +5,7 @@ from shiny.types import FileInfo
 from Bio import SeqIO
 from collections import defaultdict, Counter
 import math, pandas as pd, io, matplotlib.pyplot as plt, seaborn as sns, re
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Callable
 
 # ---------------- Codon table / utilities ----------------
 CODON_TABLE: Dict[str, List[str]] = {
@@ -26,12 +22,12 @@ SENSE_CODONS = sorted({c for v in CODON_TABLE.values() for c in v})
 AA_FOR = {c: aa for aa, codons in CODON_TABLE.items() for c in codons}
 
 def normalize_seq(s: str) -> str:
-    s = s.upper().replace(" ", "").replace("\n", "").replace("U", "T")
+    s = (s or "").upper().replace(" ", "").replace("\n", "").replace("U", "T")
     s = re.sub(r"[^ACGT]", "", s)
     n = len(s) - (len(s) % 3)
     return s[:n]
 
-# ---------------- Built-in CAI/tAI weights (unchanged from earlier) ----------------
+# ---------------- Built-in CAI/tAI weights ----------------
 ECOLI_CAI = {
     'TTT': 0.58, 'TTC': 1.00, 'TTA': 0.02, 'TTG': 0.07, 'CTT': 0.13, 'CTC': 0.20,
     'CTA': 0.02, 'CTG': 1.00, 'ATT': 0.49, 'ATC': 1.00, 'ATA': 0.03, 'ATG': 1.00,
@@ -83,92 +79,52 @@ SCER_TAI = {
 
 # ---------------- Zhou Table S5 per-codon High/Low ratios (first number per codon) ----------------
 ECO_ZHOUS5_RATIO = {
-    # Ala
     'GCT': 1.717, 'GCC': 0.639, 'GCA': 0.986, 'GCG': 0.900,
-    # Arg
     'CGT': 2.934, 'CGC': 1.189, 'CGA': 0.276, 'CGG': 0.210, 'AGA': 0.144, 'AGG': 0.153,
-    # Asn
     'AAT': 0.271, 'AAC': 3.693,
-    # Asp
     'GAT': 0.455, 'GAC': 2.198,
-    # Cys
     'TGT': 0.622, 'TGC': 1.608,
-    # Gln
     'CAA': 0.507, 'CAG': 1.972,
-    # Glu
     'GAA': 1.331, 'GAG': 0.751,
-    # Gly
     'GGT': 1.840, 'GGC': 1.474, 'GGA': 0.234, 'GGG': 0.327,
-    # His
     'CAT': 0.381, 'CAC': 2.622,
-    # Ile
     'ATT': 0.539, 'ATC': 3.406, 'ATA': 0.130,
-    # Leu
     'CTT': 0.542, 'CTC': 0.744, 'CTA': 0.285, 'CTG': 3.759, 'TTA': 0.301, 'TTG': 0.527,
-    # Lys
     'AAA': 1.136, 'AAG': 0.881,
-    # Phe
     'TTT': 0.285, 'TTC': 3.510,
-    # Pro
     'CCT': 0.526, 'CCC': 0.278, 'CCA': 0.737, 'CCG': 2.883,
-    # Ser
     'TCT': 2.360, 'TCC': 2.142, 'TCA': 0.418, 'TCG': 0.581, 'AGT': 0.343, 'AGC': 1.086,
-    # Thr
     'ACT': 1.963, 'ACC': 1.886, 'ACA': 0.293, 'ACG': 0.413,
-    # Tyr
     'TAT': 0.348, 'TAC': 2.876,
-    # Val
     'GTT': 1.668, 'GTC': 0.579, 'GTA': 1.221, 'GTG': 0.707,
-    # Single-codon AAs treated neutral:
     'ATG': 1.000,  # Met
     'TGG': 1.000,  # Trp
 }
-
 SCER_ZHOUS5_RATIO = {
-    # Ala
     'GCT': 3.919, 'GCC': 1.318, 'GCA': 0.150, 'GCG': 0.122,
-    # Arg
     'CGT': 1.554, 'CGC': 0.157, 'CGA': 0.042, 'CGG': 0.040, 'AGA': 4.273, 'AGG': 0.122,
-    # Asn
     'AAT': 0.193, 'AAC': 5.188,
-    # Asp
     'GAT': 0.485, 'GAC': 2.061,
-    # Cys
     'TGT': 3.671, 'TGC': 0.272,
-    # Gln
     'CAA': 6.547, 'CAG': 0.153,
-    # Glu
     'GAA': 4.168, 'GAG': 0.240,
-    # Gly
     'GGT': 10.496, 'GGC': 0.304, 'GGA': 0.120, 'GGG': 0.111,
-    # His
     'CAT': 0.281, 'CAC': 3.561,
-    # Ile
     'ATT': 1.261, 'ATC': 2.669, 'ATA': 0.108,
-    # Leu
     'CTT': 0.542, 'CTC': 0.744, 'CTA': 0.285, 'CTG': 3.759, 'TTA': 0.301, 'TTG': 0.527,
-    # Lys
-    'AAA': .208, 'AAG': 4.811,
-    # Phe
+    'AAA': 0.208, 'AAG': 4.811,
     'TTT': 0.251, 'TTC': 3.985,
-    # Pro
     'CCT': 0.423, 'CCC': 0.144, 'CCA': 6.153, 'CCG': 0.126,
-    # Ser
     'TCT': 2.819, 'TCC': 2.565, 'TCA': 0.331, 'TCG': 0.191, 'AGT': 0.364, 'AGC': 0.413,
-    # Thr
     'ACT': 2.056, 'ACC': 2.640, 'ACA': 1.018, 'ACG': 0.126,
-    # Tyr
     'TAT': 0.230, 'TAC': 4.340,
-    # Val
     'GTT': 1.950, 'GTC': 2.696, 'GTA': 0.135, 'GTG': 0.221,
-    # Single-codon AAs treated neutral:
     'ATG': 1.000,  # Met
     'TGG': 1.000,  # Trp
 }
 
-
-def copt_ratio_table_for_species(species: str) -> Dict[str, float]:
-    if species == "scer":
+def copt_ratio_table_for_species(species_key: str) -> Dict[str, float]:
+    if species_key == "scer":
         return {c: SCER_ZHOUS5_RATIO.get(c, 1.0) for c in SENSE_CODONS}
     return {c: ECO_ZHOUS5_RATIO.get(c, 1.0) for c in SENSE_CODONS}
 
@@ -206,8 +162,7 @@ def calculate_enc(seq: str) -> float:
     try: return float(2 + sum(k for k, _ in Fk_list) / sum(1 / Fk for _, Fk in Fk_list))
     except ZeroDivisionError: return 61.0
 
-# ---------------- Zhou Copt (ratio/log2) ----------------
-# Gene-level Copt (ratio) := geometric mean of per-codon High/Low ratios across the gene.
+# ---------------- Zhou Copt (ratio/log2) + Binary % ----------------
 def zhou_copt_ratio_for_gene(seq: str, codon_ratio: Dict[str, float]) -> Tuple[float, float]:
     seq = normalize_seq(seq)
     logs = []
@@ -222,9 +177,7 @@ def zhou_copt_ratio_for_gene(seq: str, codon_ratio: Dict[str, float]) -> Tuple[f
     gm_ratio = float(2 ** mean_log2)
     return gm_ratio, float(mean_log2)
 
-# ---------------- NEW: Binary Copt (%) threshold ----------------
-# Mark codon as "optimal" if Zhou ratio >=1, else non-optimal.
-BINARY_THRESHOLD = 1
+BINARY_THRESHOLD = 1.0  # codon considered "optimal" if ratio >= 1
 
 def copt_percent_for_gene(seq: str, codon_ratio: Dict[str, float], threshold: float = BINARY_THRESHOLD) -> float:
     seq = normalize_seq(seq)
@@ -261,7 +214,7 @@ help_modal = ui.modal(
     ui.p("This app computes CAI, tAI, ENC, and Copt metrics for coding sequences."),
     ui.h4("Copt (Zhou) used here"),
     ui.tags.ul(
-        ui.tags.li("Per-codon values are the High/Low usage ratios from Zhou et al., Table S5 (first number per codon)."),
+        ui.tags.li("Per-codon values are High/Low usage ratios from Zhou et al., Table S5 (first number per codon)."),
         ui.tags.li("Copt_ratio (Zhou) = geometric mean of per-codon ratios; Copt_log2 (Zhou) = average log2 ratio."),
         ui.tags.li(f"Copt (%) = % of codons with ratio ≥ {BINARY_THRESHOLD:.2f} (binary optimal/non-optimal)."),
         ui.tags.li("Single-codon AAs (ATG, TGG) are neutral (ratio = 1.0).")
@@ -279,25 +232,39 @@ app_ui = ui.page_fillable(
                 ui.sidebar(
                     ui.input_action_button("help_open", "Help / What’s Copt?"),
                     ui.hr(),
-                    ui.h4("Input sequences to score"),
-                    ui.input_radio_buttons("input_mode", None,
-                        choices={"upload": "Upload FASTA", "paste": "Paste sequences"},
-                        selected="upload"),
+                    ui.h4("Input mode"),
+                    ui.input_radio_buttons(
+                        "input_mode", None,
+                        choices={"upload": "Upload FASTA", "paste": "Paste sequences", "table": "Upload table (CSV)"},
+                        selected="upload"
+                    ),
                     ui.panel_conditional("input.input_mode == 'upload'",
                         ui.input_file("fasta", "Upload FASTA", accept=[".fa",".fasta",".fna"])
                     ),
                     ui.panel_conditional("input.input_mode == 'paste'",
                         ui.input_text_area("seq_text", "Paste FASTA or one sequence per line", rows=8)
                     ),
+                    ui.panel_conditional("input.input_mode == 'table'",
+                        ui.TagList(
+                            ui.input_file("table_file", "Upload CSV table", accept=[".csv"]),
+                            ui.output_ui("table_col_picker"),
+                            ui.input_select("fixed_species", "Set species for ALL rows (optional; overrides column)",
+                                            choices={"": "(none)", "ecoli": "E. coli", "scer": "S. cerevisiae"},
+                                            selected="")
+                        )
+                    ),
                     ui.hr(),
-                    ui.h4("Species for CAI/tAI (Copt ratios are from S5 and applied to both)"),
+                    ui.h4("Species for CAI/tAI (FASTA/Paste modes)"),
                     ui.input_radio_buttons("species", None,
                         choices={"ecoli": "E. coli (built-in)", "scer": "S. cerevisiae (built-in)"},
                         selected="ecoli"),
                     ui.input_switch("combined", "Combine plots", value=False),
                     ui.download_button("download_csv", "Download metrics (CSV)"),
                     ui.download_button("download_plot", "Download plot (PNG)"),
-                    width=370
+                    ui.panel_conditional("input.input_mode == 'table'",
+                        ui.download_button("download_augmented", "Download augmented table (CSV)")
+                    ),
+                    width=380
                 ),
                 ui.layout_columns(
                     ui.card(ui.card_header("Codon Metrics Table"), ui.output_data_frame("metrics_df")),
@@ -313,6 +280,25 @@ app_ui = ui.page_fillable(
     )
 )
 
+# ---------------- Common helpers for metrics rows ----------------
+def active_sets_for_species(species_key: str) -> Tuple[Dict[str,float], Dict[str,float], Dict[str,float]]:
+    if species_key == "scer":
+        return SCER_CAI, SCER_TAI, copt_ratio_table_for_species("scer")
+    return ECOLI_CAI, ECOLI_TAI, copt_ratio_table_for_species("ecoli")
+
+def compute_all_metrics(seq: str, species_key: str) -> Dict[str, float]:
+    cai_w, tai_w, copt_ratio = active_sets_for_species(species_key)
+    ratio_gm, log2_mean = zhou_copt_ratio_for_gene(seq, copt_ratio)
+    copt_percent = copt_percent_for_gene(seq, copt_ratio, BINARY_THRESHOLD)
+    return {
+        "CAI": round(calculate_cai(seq, cai_w), 4),
+        "tAI": round(calculate_tai(seq, tai_w), 4),
+        "ENC": round(calculate_enc(seq), 2),
+        "Copt_ratio (Zhou)": round(ratio_gm, 4),
+        "Copt_log2 (Zhou)": round(log2_mean, 4),
+        "Copt (%)": round(copt_percent, 2),
+    }
+
 # ---------------- Server ----------------
 def server(input: Inputs, output: Outputs, session: Session):
     # Help modal controls
@@ -323,25 +309,18 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.event(input.help_close)
     def _close_help(): ui.modal_remove()
 
-    # Active weights and S5 ratio table
+    # ===== FASTA / Paste modes =====
     @reactive.calc
-    def active_weights() -> Tuple[Dict[str,float], Dict[str,float], Dict[str,float]]:
+    def metrics_df_calc_fp() -> pd.DataFrame:
         sp = input.species()
-        if sp == "scer": return SCER_CAI, SCER_TAI, copt_ratio_table_for_species("scer")
-        return ECOLI_CAI, ECOLI_TAI, copt_ratio_table_for_species("ecoli")
-
-    @reactive.calc
-    def metrics_df_calc() -> pd.DataFrame:
-        cai_w, tai_w, copt_ratio = active_weights()
         try:
-            # Collect sequences to score
             seqs: List[Tuple[str, str]] = []
             if input.input_mode() == "upload":
                 files = input.fasta()
                 if files:
                     for rec in SeqIO.parse(files[0]["datapath"], "fasta"):
                         seqs.append((rec.id, str(rec.seq)))
-            else:
+            elif input.input_mode() == "paste":
                 seqs.extend(parse_sequences_from_text(input.seq_text() or ""))
 
             if not seqs:
@@ -351,37 +330,120 @@ def server(input: Inputs, output: Outputs, session: Session):
 
             rows = []
             for sid, s in seqs:
-                ratio_gm, log2_mean = zhou_copt_ratio_for_gene(s, copt_ratio)
-                copt_percent = copt_percent_for_gene(s, copt_ratio, BINARY_THRESHOLD)
-                rows.append({
-                    "ID": sid,
-                    "CAI": round(calculate_cai(s, cai_w), 4),
-                    "tAI": round(calculate_tai(s, tai_w), 4),
-                    "ENC": round(calculate_enc(s), 2),
-                    "Copt_ratio (Zhou)": round(ratio_gm, 4),
-                    "Copt_log2 (Zhou)": round(log2_mean, 4),
-                    "Copt (%)": round(copt_percent, 2),
-                })
+                m = compute_all_metrics(s, sp)
+                rows.append({"ID": sid, **m})
             return pd.DataFrame(rows)[
                 ["ID","CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"]
             ]
         except Exception as e:
             return pd.DataFrame({"Error":[str(e)]})
 
+    # ===== TABLE mode =====
+    @reactive.calc
+    def table_df_raw() -> Optional[pd.DataFrame]:
+        if input.input_mode() != "table":
+            return None
+        f = input.table_file()
+        if not f:
+            return None
+        try:
+            return pd.read_csv(f[0]["datapath"])
+        except Exception as e:
+            return pd.DataFrame({"Error":[f"Failed to read CSV: {e}"]})
+
+    @output
+    @render.ui
+    def table_col_picker():
+        df = table_df_raw()
+        if df is None or df.empty or "Error" in df.columns:
+            return ui.help_text("Upload a CSV to choose columns.")
+        cols = list(df.columns)
+        # cheap guesses
+        seq_guess = next((c for c in cols if c.lower() in ("cds","sequence","seq","cds_seq","CDS")), cols[0])
+        id_guess  = next((c for c in cols if c.lower() in ("id","tx_id","gene","name","locus","accession")), cols[0])
+        species_guess = next((c for c in cols if c.lower() in ("species","organism","host")), "")
+        return ui.TagList(
+            ui.input_select("id_col", "ID column", choices=cols, selected=id_guess),
+            ui.input_select("seq_col", "Sequence column", choices=cols, selected=seq_guess),
+            ui.input_select("species_col", "Species column (optional: 'ecoli' or 'scer')",
+                            choices=["(none)"] + cols, selected=species_guess or "(none)")
+        )
+
+    @reactive.calc
+    def metrics_df_calc_table() -> pd.DataFrame:
+        df = table_df_raw()
+        if df is None or df.empty:
+            return pd.DataFrame(columns=[
+                "ID","CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"
+            ])
+        if "Error" in df.columns:
+            return df
+
+        id_col = input.id_col() if "id_col" in input else None
+        seq_col = input.seq_col() if "seq_col" in input else None
+        species_col_sel = input.species_col() if "species_col" in input else "(none)"
+        fixed_species = input.fixed_species() if "fixed_species" in input else ""
+
+        if not id_col or id_col not in df.columns:
+            id_col = df.columns[0]
+        if not seq_col or seq_col not in df.columns:
+            # No usable sequence column
+            return pd.DataFrame({"Error":[
+                "Select a valid sequence column in the sidebar (Table mode)."
+            ]})
+
+        rows = []
+        for _, r in df.iterrows():
+            sid = str(r[id_col])
+            seq = normalize_seq(str(r[seq_col]))
+            if not seq:
+                rows.append({"ID": sid, "CAI": float("nan"), "tAI": float("nan"),
+                             "ENC": float("nan"), "Copt_ratio (Zhou)": float("nan"),
+                             "Copt_log2 (Zhou)": float("nan"), "Copt (%)": float("nan")})
+                continue
+
+            # Determine species for this row
+            if fixed_species:
+                sp = fixed_species
+            else:
+                if species_col_sel and species_col_sel != "(none)" and species_col_sel in df.columns:
+                    val = str(r[species_col_sel]).strip().lower()
+                    sp = "scer" if val.startswith("scer") or val in {"s.cer","s cerevisiae","s. cerevisiae","yeast"} else \
+                         "ecoli" if val.startswith("e") or "coli" in val else "ecoli"
+                else:
+                    sp = "ecoli"
+
+            m = compute_all_metrics(seq, sp)
+            rows.append({"ID": sid, **m})
+        return pd.DataFrame(rows)[
+            ["ID","CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"]
+        ]
+
+    # ===== Unified outputs (show metrics table depending on mode) =====
+    def metrics_df_current() -> pd.DataFrame:
+        mode = input.input_mode()
+        if mode == "table":
+            return metrics_df_calc_table()
+        return metrics_df_calc_fp()
+
     # Interactive table
     @render.data_frame
     def metrics_df():
-        return render.DataTable(metrics_df_calc())
+        return render.DataTable(metrics_df_current())
 
     # Copy-paste TSV
     @render.ui
     def metrics_tsv_ui():
-        df = metrics_df_calc()
+        df = metrics_df_current()
         cols = ["ID","CAI","tAI","ENC","Copt_ratio (Zhou)","Copt_log2 (Zhou)","Copt (%)"]
         if df.empty:
             tsv = "\t".join(cols)
         else:
-            tsv = df[cols].to_csv(sep="\t", index=False, lineterminator="\n")
+            # if an Error column is present, show it plainly
+            if "Error" in df.columns:
+                tsv = df.to_csv(sep="\t", index=False, lineterminator="\n")
+            else:
+                tsv = df[cols].to_csv(sep="\t", index=False, lineterminator="\n")
         return ui.TagList(
             ui.input_action_button("copy_btn", "Copy to clipboard"),
             ui.tags.textarea(
@@ -425,20 +487,54 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     @render.plot(alt="Boxplots of CAI, tAI, ENC, and Copt (Zhou)")
     def metrics_plot():
-        return make_boxplot_figure(metrics_df_calc(), combined=bool(input.combined()))
+        return make_boxplot_figure(metrics_df_current(), combined=bool(input.combined()))
 
-    # Downloads
+    # Downloads (metrics only)
     @render.download(filename="codon_metrics.csv")
     def download_csv():
-        df = metrics_df_calc()
+        df = metrics_df_current()
         with io.StringIO() as s:
             df.to_csv(s, index=False); yield s.getvalue()
 
     @render.download(filename="codon_metrics_boxplot.png")
     def download_plot():
-        fig = make_boxplot_figure(metrics_df_calc(), combined=bool(input.combined()))
+        fig = make_boxplot_figure(metrics_df_current(), combined=bool(input.combined()))
         with io.BytesIO() as buf:
             fig.savefig(buf, format="png", dpi=300, bbox_inches="tight")
             plt.close(fig); yield buf.getvalue()
+
+    # Download augmented (TABLE mode only): merges original CSV + computed columns by ID
+    @render.download(filename=lambda: augmented_name())
+    def download_augmented():
+        # guard: only in table mode
+        if input.input_mode() != "table":
+            yield b""; return
+        raw = table_df_raw()
+        metrics = metrics_df_calc_table()
+        if raw is None or raw.empty or metrics.empty or "Error" in metrics.columns:
+            with io.StringIO() as s:
+                s.write("Error: no augmented output available.\n")
+                yield s.getvalue().encode("utf-8")
+            return
+        # Merge on ID
+        # If ID column name != 'ID', we still export both (original ID col + computed 'ID').
+        # Prefer left-merge to preserve row order and all original columns.
+        id_col = input.id_col() if "id_col" in input else None
+        if id_col and id_col in raw.columns:
+            merged = raw.merge(metrics, left_on=id_col, right_on="ID", how="left")
+        else:
+            # no id column selected; append metrics in order (best effort)
+            merged = pd.concat([raw.reset_index(drop=True), metrics.reset_index(drop=True)], axis=1)
+        with io.StringIO() as s:
+            merged.to_csv(s, index=False)
+            yield s.getvalue().encode("utf-8")
+
+    def augmented_name() -> str:
+        f = input.table_file()
+        if f:
+            name = f[0]["name"]
+            base = name.rsplit(".", 1)[0]
+            return f"{base}_with_metrics.csv"
+        return "table_with_metrics.csv"
 
 app = App(app_ui, server)
